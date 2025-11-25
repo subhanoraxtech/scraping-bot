@@ -1,6 +1,8 @@
 from fastapi import FastAPI, HTTPException
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support.ui import WebDriverWait
 import time
 import json
@@ -16,11 +18,13 @@ def scrape_sms(url: str):
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--disable-images")
+    chrome_options.add_argument("--remote-debugging-port=9222")
     chrome_options.add_experimental_option("prefs", {"profile.managed_default_content_settings.images": 2})
     chrome_options.page_load_strategy = 'eager'
     chrome_options.set_capability('goog:loggingPrefs', {'performance': 'ALL'})
     
-    driver = webdriver.Chrome(options=chrome_options)
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=chrome_options)
     driver.set_page_load_timeout(10)
     
     try:

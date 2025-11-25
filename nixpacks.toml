@@ -1,12 +1,8 @@
 [phases.setup]
-aptPkgs = ["wget", "gnupg", "unzip", "curl"]
+aptPkgs = ["chromium-browser"]
 
 [phases.install]
 cmds = [
-  "wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add -",
-  "echo 'deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main' >> /etc/apt/sources.list.d/google.list",
-  "apt-get update",
-  "apt-get install -y google-chrome-stable",
   "python3 -m pip install -r requirements.txt"
 ]
 
