@@ -1,89 +1,86 @@
 from fastapi import FastAPI, HTTPException
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.support.ui import WebDriverWait
-import time
-import json
+from playwright.async_api import async_playwright
+import asyncio
 from urllib.parse import unquote
+import json
 
 app = FastAPI()
 
-def scrape_sms(url: str):
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--disable-extensions")
-    chrome_options.add_argument("--disable-images")
-    chrome_options.add_argument("--remote-debugging-port=9222")
-    chrome_options.add_experimental_option("prefs", {"profile.managed_default_content_settings.images": 2})
-    chrome_options.page_load_strategy = 'eager'
-    chrome_options.set_capability('goog:loggingPrefs', {'performance': 'ALL'})
-    
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=chrome_options)
-    driver.set_page_load_timeout(10)
-    
-    try:
-        driver.get(url)
-        time.sleep(2)
+async def scrape_sms(url: str):
+    async with async_playwright() as p:
+        # Launch browser with appropriate settings for serverless
+        browser = await p.chromium.launch(
+            headless=True,
+            args=[
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--disable-extensions',
+                '--disable-images',
+            ]
+        )
         
-        button = driver.execute_script("""
-            const elements = Array.from(document.querySelectorAll('button, div[role="button"], span[role="button"]'));
-            for (let elem of elements) {
-                const text = (elem.textContent || elem.innerText || elem.getAttribute('aria-label') || '').toLowerCase();
-                if (text.includes('sms')) {
-                    return elem;
+        context = await browser.new_context()
+        page = await context.new_page()
+        
+        # Store network requests
+        sms_data = {'number': None, 'body': None}
+        
+        async def handle_request(request):
+            url = request.url
+            if url.startswith('sms://') and 'body=' in url:
+                number_start = 6
+                number_end = url.find('/', number_start)
+                sms_data['number'] = url[number_start:number_end]
+                
+                body_start = url.find('body=') + 5
+                sms_data['body'] = unquote(url[body_start:])
+        
+        page.on('request', handle_request)
+        
+        try:
+            # Navigate to the page
+            await page.goto(url, wait_until='domcontentloaded', timeout=10000)
+            await asyncio.sleep(2)
+            
+            # Find and click the SMS button
+            button = await page.evaluate("""
+                () => {
+                    const elements = Array.from(document.querySelectorAll('button, div[role="button"], span[role="button"]'));
+                    for (let elem of elements) {
+                        const text = (elem.textContent || elem.innerText || elem.getAttribute('aria-label') || '').toLowerCase();
+                        if (text.includes('sms')) {
+                            return elem;
+                        }
+                    }
+                    return null;
                 }
-            }
-            return null;
-        """)
+            """)
+            
+            if not button:
+                raise Exception("Could not find Send SMS button")
+            
+            # Click the button
+            await page.click('button:has-text("SMS"), div[role="button"]:has-text("SMS"), span[role="button"]:has-text("SMS")')
+            await asyncio.sleep(2)
+            
+            return sms_data['number'], sms_data['body']
         
-        if not button:
-            raise Exception("Could not find Send SMS button")
-        
-        driver.execute_script("arguments[0].click();", button)
-        time.sleep(2)
-        
-        logs = driver.get_log('performance')
-        sms_number = None
-        sms_body = None
-        
-        for entry in logs:
-            try:
-                log = json.loads(entry['message'])['message']
-                if log['method'] == 'Network.requestWillBeSent':
-                    sms_url = log['params']['request'].get('url', '')
-                    if sms_url.startswith('sms://') and 'body=' in sms_url:
-                        number_start = 6
-                        number_end = sms_url.find('/', number_start)
-                        sms_number = sms_url[number_start:number_end]
-                        
-                        body_start = sms_url.find('body=') + 5
-                        sms_body = unquote(sms_url[body_start:])
-                        break
-            except:
-                continue
-        
-        return sms_number, sms_body
-    
-    finally:
-        driver.quit()
+        finally:
+            await browser.close()
 
 @app.get("/")
 def root():
     return {"message": "SMS Scraper API", "usage": "/get-sms?url=YOUR_URL"}
 
 @app.get("/get-sms")
-def get_sms(url: str):
+async def get_sms(url: str):
     if not url:
         raise HTTPException(status_code=400, detail="URL parameter is required")
     
     try:
-        number, text = scrape_sms(url)
+        number, text = await scrape_sms(url)
         
         if number and text:
             return {
