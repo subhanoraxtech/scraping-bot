@@ -39,7 +39,17 @@ async def scrape_sms(url: str):
             url = request.url
             if url.startswith('sms://') and 'body=' in url:
                 number_start = 6
-                number_end = url.find('/', number_start)
+                # Find the end of the number (either / or ?)
+                number_end_slash = url.find('/', number_start)
+                number_end_q = url.find('?', number_start)
+                
+                if number_end_slash != -1 and (number_end_q == -1 or number_end_slash < number_end_q):
+                    number_end = number_end_slash
+                elif number_end_q != -1:
+                    number_end = number_end_q
+                else:
+                    number_end = len(url)
+                    
                 sms_data['number'] = url[number_start:number_end]
                 
                 body_start = url.find('body=') + 5
