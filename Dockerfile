@@ -1,6 +1,8 @@
 FROM python:3.11-slim
 
-# Install system dependencies for Playwright
+WORKDIR /app
+
+# System dependencies required by Playwright
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -26,21 +28,18 @@ RUN apt-get update && apt-get install -y \
     xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
-
-# Copy requirements and install Python dependencies
+# Copy and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright browsers
-RUN playwright install chromium
-RUN playwright install-deps chromium
+# Install Playwright and browser binaries
+RUN playwright install --with-deps chromium
 
-# Copy application code
+# Copy project files
 COPY . .
 
 # Expose port
 EXPOSE 8000
 
-# Run the application
+# Start server
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -3,23 +3,31 @@ from playwright.async_api import async_playwright
 import asyncio
 from urllib.parse import unquote
 import json
+import os
 
 app = FastAPI()
 
 async def scrape_sms(url: str):
     async with async_playwright() as p:
-        # Launch browser with appropriate settings for serverless
-        browser = await p.chromium.launch(
-            headless=True,
-            args=[
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--disable-extensions',
-                '--disable-images',
-            ]
-        )
+        # Check for remote browser endpoint (Required for Vercel)
+        browser_ws_endpoint = os.environ.get("BROWSER_WS_ENDPOINT")
+        
+        if browser_ws_endpoint:
+            print(f"Connecting to remote browser...")
+            browser = await p.chromium.connect(browser_ws_endpoint)
+        else:
+            # Fallback to local launch (Works on Railway/Local)
+            browser = await p.chromium.launch(
+                headless=True,
+                args=[
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu',
+                    '--disable-extensions',
+                    '--disable-images',
+                ]
+            )
         
         context = await browser.new_context()
         page = await context.new_page()
